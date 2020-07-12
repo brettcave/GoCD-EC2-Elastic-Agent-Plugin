@@ -158,6 +158,8 @@ public class Ec2Instance {
                         .resourceType("instance")
                         .build();
 
+                String iamProfileName = (request.properties().get("ec2_instance_profile") == null) ? "" : request.properties().get("ec2_instance_profile");
+                
                 RunInstancesRequest runInstancesRequest = RunInstancesRequest.builder()
                         .imageId(request.properties().get("ec2_ami"))
                         .instanceType(InstanceType.fromValue(request.properties().get("ec2_instance_type")))
@@ -166,6 +168,7 @@ public class Ec2Instance {
                         .keyName(request.properties().get("ec2_key"))
                         .securityGroupIds(securityGroups)
                         .subnetId(subnets.get(i))
+                        .iamInstanceProfile(IamInstanceProfileSpecification.builder().name(iamProfileName).build())
                         .userData(Base64.getEncoder().encodeToString(userdata.getBytes()))
                         .tagSpecifications(tagSpecification)
                         .build();

@@ -97,6 +97,9 @@ public class Ec2Instance {
         // try create instance for each AZ if error. If there's a break after successful launch, don't even need to check for result here. 
         while (!result && i < subnets.size()) {
             try {
+            	
+            	Collection<Tag> tagsForInstance = new ArrayList<Tag>();
+            	
                 Tag tagName = Tag.builder()
                         .key("Name")
                         .value("GoCD EA "
@@ -141,20 +144,36 @@ public class Ec2Instance {
                         .key("JsonJobIdentifier")
                         .value(request.jobIdentifier().toJson())
                         .build();
+                
+                tagsForInstance.add(tagName);
+                tagsForInstance.add(tagType);
+                tagsForInstance.add(tagPipelineName);
+                tagsForInstance.add(tagPipelineCounter);
+                tagsForInstance.add(tagPipelineLabel);
+                tagsForInstance.add(tagStageName);
+                tagsForInstance.add(tagStageCounter);
+                tagsForInstance.add(tagJobName);
+                tagsForInstance.add(tagJobId);
+                tagsForInstance.add(tagJsonJobIdentifier);
+
+                String tagsProperty = request.properties().get("ec2_instance_tags");
+                if (tagsProperty != null && !tagsProperty.isBlank()) {
+                    List<String> tagList = Arrays.asList(tagsProperty.split("\\s*,\\s*"));
+                	for (String tagProperty : tagList) {
+                		String[] tagKeyVal = tagProperty.split("=");
+                		if (tagKeyVal.length != 2)
+                			continue; // need key=val mode.
+                        Tag customTag = Tag.builder()
+                                .key(tagKeyVal[0])
+                                .value(tagKeyVal[1])
+                                .build();
+                        
+                        tagsForInstance.add(customTag);
+                	}
+                }
 
                 TagSpecification tagSpecification = TagSpecification.builder()
-                        .tags(
-                                tagName,
-                                tagType,
-                                tagPipelineName,
-                                tagPipelineCounter,
-                                tagPipelineLabel,
-                                tagStageName,
-                                tagStageCounter,
-                                tagJobName,
-                                tagJobId,
-                                tagJsonJobIdentifier
-                        )
+                        .tags(tagsForInstance)
                         .resourceType("instance")
                         .build();
 

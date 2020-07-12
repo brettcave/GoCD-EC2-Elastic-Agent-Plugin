@@ -21,8 +21,7 @@ package com.continuumsecurity.elasticagent.ec2;
 import com.continuumsecurity.elasticagent.ec2.models.JobIdentifier;
 import com.continuumsecurity.elasticagent.ec2.requests.CreateAgentRequest;
 import org.joda.time.DateTime;
-import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
-import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.auth.credentials.*;
 import software.amazon.awssdk.awscore.exception.AwsServiceException;
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.regions.Region;
@@ -159,6 +158,8 @@ public class Ec2Instance {
                         .resourceType("instance")
                         .build();
 
+                String iamProfileName = (request.properties().get("ec2_instance_profile") == null) ? "" : request.properties().get("ec2_instance_profile");
+                
                 RunInstancesRequest runInstancesRequest = RunInstancesRequest.builder()
                         .imageId(request.properties().get("ec2_ami"))
                         .instanceType(InstanceType.fromValue(request.properties().get("ec2_instance_type")))
@@ -167,6 +168,7 @@ public class Ec2Instance {
                         .keyName(request.properties().get("ec2_key"))
                         .securityGroupIds(securityGroups)
                         .subnetId(subnets.get(i))
+                        .iamInstanceProfile(IamInstanceProfileSpecification.builder().name(iamProfileName).build())
                         .userData(Base64.getEncoder().encodeToString(userdata.getBytes()))
                         .tagSpecifications(tagSpecification)
                         .build();
@@ -221,13 +223,24 @@ public class Ec2Instance {
             ec2.close();
         }
     }
-
-    private static Ec2Client createEc2Client(String awsAccessKeyId, String awsSecretAccessKey, Region region) {
-        AwsBasicCredentials awsCredentials = AwsBasicCredentials.create(awsAccessKeyId, awsSecretAccessKey);
-
+    
+    private static boolean isNotNullOrBlank(String testString) {
+    	return testString!=null && !testString.isBlank();
+    }
+    
+    private static AwsCredentialsProvider getCredentialsProvider(String awsAccessKeyId, String awsSecretAccessKey) {
+        if (isNotNullOrBlank(awsAccessKeyId) && isNotNullOrBlank(awsSecretAccessKey)) {
+            AwsBasicCredentials awsCredentials = AwsBasicCredentials.create(awsAccessKeyId,awsSecretAccessKey);
+            return StaticCredentialsProvider.create(awsCredentials);
+        }
+        else {
+            return DefaultCredentialsProvider.create();
+        }
+    }
+    protected static Ec2Client createEc2Client(String awsAccessKeyId, String awsSecretAccessKey, Region region) {
         return Ec2Client.builder()
                 .region(region)
-                .credentialsProvider(StaticCredentialsProvider.create(awsCredentials))
+                .credentialsProvider(getCredentialsProvider(awsAccessKeyId,awsSecretAccessKey))
                 .build();
     }
 

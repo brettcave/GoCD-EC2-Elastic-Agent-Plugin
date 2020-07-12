@@ -93,9 +93,9 @@ public class Ec2Instance {
 
         boolean result = false;
         int i = 0;
-
+        
         RunInstancesResponse response = null;
-        // try create instance for each AZ if error
+        // try create instance for each AZ if error. If there's a break after successful launch, don't even need to check for result here. 
         while (!result && i < subnets.size()) {
             try {
                 Tag tagName = Tag.builder()
@@ -183,11 +183,12 @@ public class Ec2Instance {
             } finally {
                 i++;
             }
+            if (result)
+            	break;
         }
 
-        if (i < subnets.size() && response != null) {
+        if (response != null) {
             Instance instance = response.instances().get(0);
-
             return new Ec2Instance(instance.instanceId(), Date.from(instance.launchTime()), request.properties(), request.jobIdentifier());
         } else {
             consoleLogAppender.accept("Could not create instance in any provided subnet!");

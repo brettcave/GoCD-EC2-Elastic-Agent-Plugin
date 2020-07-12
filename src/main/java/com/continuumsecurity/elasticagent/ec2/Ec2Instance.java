@@ -21,8 +21,7 @@ package com.continuumsecurity.elasticagent.ec2;
 import com.continuumsecurity.elasticagent.ec2.models.JobIdentifier;
 import com.continuumsecurity.elasticagent.ec2.requests.CreateAgentRequest;
 import org.joda.time.DateTime;
-import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
-import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.auth.credentials.*;
 import software.amazon.awssdk.awscore.exception.AwsServiceException;
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.regions.Region;
@@ -93,11 +92,14 @@ public class Ec2Instance {
 
         boolean result = false;
         int i = 0;
-
+        
         RunInstancesResponse response = null;
-        // try create instance for each AZ if error
+        // try create instance for each AZ if error. If there's a break after successful launch, don't even need to check for result here. 
         while (!result && i < subnets.size()) {
             try {
+            	
+            	Collection<Tag> tagsForInstance = new ArrayList<Tag>();
+            	
                 Tag tagName = Tag.builder()
                         .key("Name")
                         .value("GoCD EA "
@@ -142,23 +144,41 @@ public class Ec2Instance {
                         .key("JsonJobIdentifier")
                         .value(request.jobIdentifier().toJson())
                         .build();
+                
+                tagsForInstance.add(tagName);
+                tagsForInstance.add(tagType);
+                tagsForInstance.add(tagPipelineName);
+                tagsForInstance.add(tagPipelineCounter);
+                tagsForInstance.add(tagPipelineLabel);
+                tagsForInstance.add(tagStageName);
+                tagsForInstance.add(tagStageCounter);
+                tagsForInstance.add(tagJobName);
+                tagsForInstance.add(tagJobId);
+                tagsForInstance.add(tagJsonJobIdentifier);
+
+                String tagsProperty = request.properties().get("ec2_instance_tags");
+                if (tagsProperty != null && !tagsProperty.isBlank()) {
+                    List<String> tagList = Arrays.asList(tagsProperty.split("\\s*,\\s*"));
+                	for (String tagProperty : tagList) {
+                		String[] tagKeyVal = tagProperty.split("=");
+                		if (tagKeyVal.length != 2)
+                			continue; // need key=val mode.
+                        Tag customTag = Tag.builder()
+                                .key(tagKeyVal[0])
+                                .value(tagKeyVal[1])
+                                .build();
+                        
+                        tagsForInstance.add(customTag);
+                	}
+                }
 
                 TagSpecification tagSpecification = TagSpecification.builder()
-                        .tags(
-                                tagName,
-                                tagType,
-                                tagPipelineName,
-                                tagPipelineCounter,
-                                tagPipelineLabel,
-                                tagStageName,
-                                tagStageCounter,
-                                tagJobName,
-                                tagJobId,
-                                tagJsonJobIdentifier
-                        )
+                        .tags(tagsForInstance)
                         .resourceType("instance")
                         .build();
 
+                String iamProfileName = (request.properties().get("ec2_instance_profile") == null) ? "" : request.properties().get("ec2_instance_profile");
+                
                 RunInstancesRequest runInstancesRequest = RunInstancesRequest.builder()
                         .imageId(request.properties().get("ec2_ami"))
                         .instanceType(InstanceType.fromValue(request.properties().get("ec2_instance_type")))
@@ -167,6 +187,7 @@ public class Ec2Instance {
                         .keyName(request.properties().get("ec2_key"))
                         .securityGroupIds(securityGroups)
                         .subnetId(subnets.get(i))
+                        .iamInstanceProfile(IamInstanceProfileSpecification.builder().name(iamProfileName).build())
                         .userData(Base64.getEncoder().encodeToString(userdata.getBytes()))
                         .tagSpecifications(tagSpecification)
                         .build();
@@ -183,11 +204,12 @@ public class Ec2Instance {
             } finally {
                 i++;
             }
+            if (result)
+            	break;
         }
 
-        if (i < subnets.size() && response != null) {
+        if (response != null) {
             Instance instance = response.instances().get(0);
-
             return new Ec2Instance(instance.instanceId(), Date.from(instance.launchTime()), request.properties(), request.jobIdentifier());
         } else {
             consoleLogAppender.accept("Could not create instance in any provided subnet!");
@@ -220,13 +242,24 @@ public class Ec2Instance {
             ec2.close();
         }
     }
-
-    private static Ec2Client createEc2Client(String awsAccessKeyId, String awsSecretAccessKey, Region region) {
-        AwsBasicCredentials awsCredentials = AwsBasicCredentials.create(awsAccessKeyId, awsSecretAccessKey);
-
+    
+    private static boolean isNotNullOrBlank(String testString) {
+    	return testString!=null && !testString.isBlank();
+    }
+    
+    private static AwsCredentialsProvider getCredentialsProvider(String awsAccessKeyId, String awsSecretAccessKey) {
+        if (isNotNullOrBlank(awsAccessKeyId) && isNotNullOrBlank(awsSecretAccessKey)) {
+            AwsBasicCredentials awsCredentials = AwsBasicCredentials.create(awsAccessKeyId,awsSecretAccessKey);
+            return StaticCredentialsProvider.create(awsCredentials);
+        }
+        else {
+            return DefaultCredentialsProvider.create();
+        }
+    }
+    protected static Ec2Client createEc2Client(String awsAccessKeyId, String awsSecretAccessKey, Region region) {
         return Ec2Client.builder()
                 .region(region)
-                .credentialsProvider(StaticCredentialsProvider.create(awsCredentials))
+                .credentialsProvider(getCredentialsProvider(awsAccessKeyId,awsSecretAccessKey))
                 .build();
     }
 
